@@ -1,0 +1,258 @@
+manifest:
+  version: "0.1.3"
+  schema: https://a2as.org/cert/schema
+  subject:
+    name: praneash2/gen-ui
+    source: https://github.com/praneash2/gen-ui
+    branch: main
+    commit: "753f2fdf"
+    scope: [server/deployment/deploy.py, server/orchestrator_agent/agent.py, server/orchestrator_agent/subagents/component_agent/__init__.py,
+      server/orchestrator_agent/subagents/component_agent/agent.py, server/orchestrator_agent/subagents/logo_agent/__init__.py,
+      server/orchestrator_agent/subagents/logo_agent/agent.py]
+  issued:
+    by: A2AS.org
+    at: '2026-02-11T16:53:43Z'
+    url: https://a2as.org/certified/agents/praneash2/gen-ui
+  signatures:
+    digest: sha256:YABm-LMKRky5H0M8cm-1UdBzxeXtghjjPulVYVzA5_4
+    key: ed25519:-ur5o3bymGfSq1Be8gbUvCegtSmpR5TyantkPRWIx1U
+    sig: ed25519:KuVxAJG6DIlrLZFYEntKSr6vucRdI0NpmF1eA4fAqvTot_MhEEny6bHnqXN9ADP5WKH8WBXEAnDDwCms6ntZBw
+
+agents:
+  combine_results_agent:
+    type: instance
+    models: [gemini-2.0-flash]
+    params:
+      name: combine_results_agent
+      description: Combine results agent
+      instruction: [You are a helpful assistant that combines the results of the sub-agents., You will respond with the combined
+          object., Strictly don't change the existing structure or values of the object.]
+      output_schema: FinalResultAgentResponseList
+  component_agent:
+    type: instance
+    models: [azure/gpt-4.1]
+    params:
+      name: component_agent
+      description: Component agent
+      instruction: [You will receive a components with their name as key and their value as component code. The input will
+          be in object formate so after the improvisation give it as array of json as mentioned in the response output schema.,
+        You are a helpful assistant that alter components for react applications., 'You will be given a task to alter a component,
+          and you will respond with the code for that component with strictly altered styles and no logic changes.', But you
+          will not respond with the whole component but you will respond in a format that can be used to create a component.,
+        'you will be not using typescript, you will be using javascript.', 'You will respond with a JSON object that contains
+          the following fields with the split as mentioned below:', '- name: the name of the component.This should be same
+          as the input.', '- description: a short description of the component.', '- functionality: The code out the return
+          statement of the component. Basically the logic of the component.', '- code: the code inside the return statement
+          of the component. Basically the JSX code.']
+      output_schema: ComponentAgentResponseList
+      output_key: component_agent_response
+      disallow_transfer_to_parent: "True"
+      disallow_transfer_to_peers: "True"
+  layout_agent:
+    type: instance
+    params:
+      name: layout_agent
+      sub_agents: [component_agent, logo_agent]
+  logo_agent:
+    type: instance
+    models: [gemini-2.0-flash]
+    tools: [generate_image]
+    params:
+      name: logo_agent
+      description: An agent that generates images based on user prompts
+      instruction: [You are an agent whose job is to make 'generate_image' toolcall from the key 'theme' in the input prompt
+          and pass the 'theme' to the tool., 'Whatever be the structure of the input prompt, you will infer the ''theme''
+          from it and pass it to the toolcall.', Get the LogoURL(logo_url) from the tool call response LogoAgentResponse and
+          strictly return only the URL in the response no other texts.]
+      output_key: logo_agent_response
+  root_agent:
+    type: instance
+    params:
+      name: orchestrator_agent
+      sub_agents: [layout_agent, combine_results_agent]
+
+models:
+  azure/gpt-4.1:
+    type: function
+    agents: [component_agent]
+    params:
+      wrapper: LiteLlm
+      model: azure/gpt-4.1
+  gemini-2.0-flash:
+    type: literal
+    agents: [combine_results_agent, logo_agent]
+
+tools:
+  generate_image:
+    type: function
+    agents: [logo_agent]
+    params:
+      description: |-
+        Generate an image based on the provided prompt using Google Gemini API via FastAPI.
+
+        Args:
+            prompt (str): The text prompt for image generation.
+
+        Returns:
+            LogoAgentResponse: Response containing status, filename, and image URL.
+
+teams:
+  layout_agent:
+    type: parallel
+    agents: [layout_agent, component_agent, logo_agent]
+  root_agent:
+    type: sequential
+    agents: [root_agent, layout_agent, combine_results_agent]
+
+imports:
+  AdkApp: vertexai.preview.reasoning_engines.AdkApp
+  Agent: google.adk.agents.Agent
+  agent_engines: vertexai.agent_engines
+  app: absl.app
+  BaseModel: pydantic.BaseModel
+  component_agent: subagents.component_agent.component_agent
+  Field: pydantic.Field
+  flags: absl.flags
+  httpx: httpx
+  json: json
+  LiteLlm: google.adk.models.lite_llm.LiteLlm
+  load_dotenv: dotenv.load_dotenv
+  logo_agent: agent.logo_agent
+  os: os
+  ParallelAgent: google.adk.agents.ParallelAgent
+  root_agent: agent.root_agent
+  SequentialAgent: google.adk.agents.SequentialAgent
+  sys: sys
+  vertexai: vertexai
+
+functions:
+  create:
+    type: sync
+    module: server.deployment.deploy
+    params:
+      returns: None
+  create_session:
+    type: sync
+    module: server.deployment.deploy
+    args: [resource_id, user_id]
+    params:
+      returns: None
+  delete:
+    type: sync
+    module: server.deployment.deploy
+    args: [resource_id]
+    params:
+      returns: None
+  generate_image:
+    type: async
+    module: server.orchestrator_agent.subagents.logo_agent.agent
+    args: [prompt]
+    params:
+      returns: LogoAgentResponse
+  get_session:
+    type: sync
+    module: server.deployment.deploy
+    args: [resource_id, user_id, session_id]
+    params:
+      returns: None
+  list_deployments:
+    type: sync
+    module: server.deployment.deploy
+    params:
+      returns: None
+  list_sessions:
+    type: sync
+    module: server.deployment.deploy
+    args: [resource_id, user_id]
+    params:
+      returns: None
+  main:
+    type: sync
+    module: server.deployment.deploy
+    args: [argv]
+  send_message_stream:
+    type: sync
+    module: server.deployment.deploy
+    args: [resource_id, user_id, message]
+    params:
+      returns: None
+
+variables:
+  AZURE_API_BASE:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.deployment.deploy]
+  AZURE_API_KEY:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.deployment.deploy]
+  AZURE_API_VERSION:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.deployment.deploy]
+  CLOUDINARY_API_KEY:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.deployment.deploy]
+  CLOUDINARY_API_SECRET:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.deployment.deploy]
+  CLOUDINARY_CLOUD_NAME:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.deployment.deploy]
+  FASTAPI_URL:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.orchestrator_agent.subagents.logo_agent.agent]
+  GOOGLE_API_KEY:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.deployment.deploy]
+  GOOGLE_CLOUD_LOCATION:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.deployment.deploy]
+  GOOGLE_CLOUD_PROJECT:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.deployment.deploy]
+  GOOGLE_CLOUD_STAGING_BUCKET:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.deployment.deploy]
+  GOOGLE_GENAI_USE_VERTEXAI:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.deployment.deploy]
+  MODEL:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.orchestrator_agent.agent, server.orchestrator_agent.subagents.logo_agent.agent]
+  MODEL_GPT_41:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [server.orchestrator_agent.subagents.component_agent.agent]
+
+files:
+  ../..:
+    type: pattern
+    actions: [read]
+    params:
+      caller: [os.path.join]
+      pattern: [os.path.dirname(), ../..]
